@@ -6,7 +6,6 @@ namespace Eagle;
 
 class Configure
 {
-
     protected static $values = [];
 
     /**

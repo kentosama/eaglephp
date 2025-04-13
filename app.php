@@ -1,48 +1,25 @@
-<?php
+<?php 
 
-/**
- * Main app
- *
- * @author Jacques Belosoukinski <kentosama@free.fr>
- * 
- */
+require_once __DIR__ . '/config/paths.php';
+require_once __DIR__ . '/vendor/autoload.php';
 
-
-
-session_start();
-
-// Core
-require_once('config/paths.php');
-/*require_once(APP_CORE . DS . 'core.php');
-require_once(APP_CORE . DS . 'validation.php');
-require_once(APP_CORE . DS . 'query.php');
-require_once(APP_CORE . DS . 'request.php');
-require_once(APP_CORE . DS . 'auth.php');*/
-
-spl_autoload_register(function ($className) {
-    $className = str_replace('\\', DS, $className);
-    $className = str_replace('Eagle', 'eagle', $className);
-    $className = str_replace('App/', 'app/', $className);
-    
-    include $className . '.php';
-});
-
+use Eagle\ErrorException;
 use Eagle\Core;
 use Eagle\Query;
 use Eagle\Message;
-use Eagle\ErrorException;
+use Eagle\Configure;
 
-
+session_start();
 
 $config = Core::getConfig();
+foreach($config as $name => $value)
+    Configure::write($name, $value);
 
 if($config['debug'])
 {
     ini_set('display_errors', 1);
     ini_set('display_startup_errors', 1);
     error_reporting(E_ALL);
-    
-   
 }
 else
 {
@@ -50,8 +27,6 @@ else
     ini_set('display_startup_errors', 0);
     error_reporting(0);
 }
-
-
 
 $query = new Query;
 $message = new Message;
@@ -71,4 +46,4 @@ catch(Exception $e)
     die();
 }
 
-
+require_once APP_CONFIG . DS . 'routes.php';

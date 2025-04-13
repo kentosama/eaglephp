@@ -11,6 +11,7 @@ namespace Eagle\Helper;
 
 use Eagle\Helper;
 use Eagle\Request;
+use Eagle\Router;
 
 class Html extends Helper
 {
@@ -36,8 +37,12 @@ class Html extends Helper
             'alt' => false,
         ];
 
-        if(dirname($uri) == '.')
+        $root = ['/', '.'];
+
+        if(in_array(dirname($uri), $root))
             $uri = IMG_DIR . DS . $uri ;
+        
+        
         
         $args = array_merge($default, $args);
         
@@ -51,7 +56,7 @@ class Html extends Helper
         $args = implode(' ', $data);
 
         $result = '<img src="$1" $2>';
-        $result = str_replace('$1', $uri, $result);
+        $result = str_replace('$1', DS . $uri, $result);
         $result = str_replace('$2', $args, $result);
 
         return $result;
@@ -92,7 +97,7 @@ class Html extends Helper
      * @param $args Tableau contenant les arguments pour personnaliser l'élément.
      * @return string Chaîne contenant le code HTML
      */
-    public function buttonDelete(string $name = 'Delete', int $id, array $args = []): string
+    public function buttonDelete(int $id, string $name = 'Delete', array $args = []): string
     {
         $params = $this->request->getParams();
         
@@ -118,11 +123,25 @@ class Html extends Helper
     public function link(string $title = NULL, $url = [], array $args = [])
     {
         $default = [
-            'alt' => $title,
-            'class' => NULL
+            'alt'       => $title,
+            'class'     => NULL,
+        ];
+
+        $_url = [
+            'prefix' => $this->request->getParams('prefix'),
         ];
 
         $uri = '';
+
+        if(!empty($url))
+        {
+            if(is_array($url))
+            {
+                $url = array_merge($_url, $url);
+                $url = Router::parse($url);
+            }
+                
+        }
 
         $args = array_merge($default, $args);
 
@@ -136,7 +155,7 @@ class Html extends Helper
         $params = $this->request->getParams();
         
         if(!empty($params))
-        $currentUrl = ['controller' => $params['controller'], 'action' => $params['action']];
+        $currentUrl = ['prefix' => $params['prefix'], 'controller' => $params['controller'], 'action' => $params['action']];
         
         if(!empty($url) && is_string($url))
         {
@@ -144,22 +163,52 @@ class Html extends Helper
         }
         else if(is_array($url))
         {
+            if($url['action'] === 'index')
+            {
+                $url['action'] = '';
+            }
+
             $url = array_merge($currentUrl, $url);
             
-            if(isset($url['controller']) && isset($url['action']))
-                $uri = sprintf('/?controller=%s&action=%s', $url['controller'], $url['action']);
+            $uri = '';
+            $items = [];
+            foreach($url as $key => $value)
+                $items[] = $key . '=' . $value;
             
-            if(isset($url['id']))
-                $uri .= '&id='.$url['id'];
+            $uri .= '/' . implode('&', $items);
+
+            $uri = Router::reverse($uri);
         }
-        
-        
+
         $html = '<a href="$1" $2>$3</a>';
         $html = str_replace('$2', implode(' ',  $data), $html);
         $html = str_replace('$1', $uri, $html);
         $html = str_replace('$3', $title, $html);
 
         return $html;
+    }
+
+    public function css(string $uri, array $args = []): string
+    {
+        $default = [
+            'rel' => 'stylesheet',
+            'type' => 'text/css',
+        ];
+
+        $args = array_merge($default, $args);
+
+        $data = [];
+        foreach($args as $key => $value)
+        {
+            if(!empty($value))
+                $data[] = $key . '="' . $value . '"';
+        }
+
+        $data = implode(' ', $data);
+
+        $uri = CSS_DIR . DS . $uri;
+
+        return "<link href=\"$uri\" $data>";
     }
 
 

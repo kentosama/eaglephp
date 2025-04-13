@@ -6,6 +6,7 @@ namespace Eagle;
 
 use PDO;
 use Exception;
+use stdClass;
 
 class Query
 {
@@ -40,6 +41,22 @@ class Query
         }
 
         $this->validation = new Validation;
+
+        $this->initialize();
+    }
+
+    public function initialize(): void
+    {
+        /*if(!empty($this->associations))
+        {
+            foreach($this->associations as $asso)
+            {
+                $className = 'App\\Entity\\' . ucfirst($asso['table']);
+                $obj = $asso['table'];
+               
+                $this->$obj = new $className();   
+            }
+        }*/
     }
 
     /**
@@ -68,7 +85,8 @@ class Query
 
             $setting = $this->associations[$asso];
 
-            $join = sprintf('%s JOIN $2 ON $1.%s = $2.%s', $setting['join'], $setting['foreignKey'], $setting['primaryKey']);
+            $join = sprintf('%s JOIN $2 AS $3 ON $1.%s = $3.%s', $setting['join'], $setting['foreignKey'], $setting['primaryKey']);
+            $join = str_replace('$3', ucfirst( $setting['table']), $join);
             $join = str_replace('$1', $this->table, $join);
             $join = str_replace('$2', $setting['table'], $join);
             $joins[] = $join;
@@ -97,12 +115,25 @@ class Query
 
         foreach ($array as $field => $value) 
         {
-            if(!in_array($field, $exclude))
-                $field .= ' = ';
+            $f = FALSE;
+            foreach($exclude as $e)
+            {
+                if(strpos($e, $field))
+                {
+                    $f = TRUE;
+                    break;
+                }
+                
+                    
+            }
 
-            $f = str_replace($exclude, '', $field);
+            if(!$f)
+            $field .= ' = ';
+            
 
-            if (in_array($this->fields[$f], ['string', 'date', 'datetime']))
+            //$f = str_replace($exclude, '', $field);
+            //if (in_array($this->fields[$f], ['string', 'date', 'datetime']))
+            if(is_string($value))
                 $conditions[] = sprintf('%s "%s"', $field, $value);
             else
                 $conditions[] = sprintf('%s %d', $field, $value);
@@ -134,6 +165,25 @@ class Query
     private function addSQL(string $sql)
     {
         $this->sql[] = $sql;
+    }
+
+    private function type(array $entity): ?array
+    {
+        if(empty($entity))
+        return NULL;
+
+        foreach($this->fields as $key => $value)
+        {
+            if(isset($entity[$key]))
+            {
+                if($value === 'integer')
+                    $entity[$key] = (int) $entity[$key];
+                else if($value === 'decimal')
+                    $entity[$key] = (float) $entity[$key];
+            }
+        }
+
+        return $entity;
     }
 
     /**
@@ -189,7 +239,11 @@ class Query
         $result = $query->fetch(PDO::FETCH_ASSOC);
 
         if(!empty($result))
+        {
+            $result = $this->type($result);
             $result = $this->afterFind($result);
+        }
+            
 
         return $result;
     }
@@ -278,9 +332,16 @@ class Query
             $sql .= $this->limit($args['limit']);
 
         
-        $query = $this->db->prepare($sql);
+        try {
+            $query = $this->db->prepare($sql);
         $query->execute();
-        $result = $query->fetchAll(PDO::FETCH_ASSOC);
+        $result = $query->fetchAll(PDO::FETCH_OBJ);
+        }
+        catch (Exception $e) {
+            include TEMPLATE_DIR . DS . 'Layouts' . DS . 'error.php';
+            die();
+        }
+        
 
         $this->addSQL($sql);
 
@@ -289,8 +350,21 @@ class Query
             foreach($result as $key => $entity)
             {
                 $result[$key] = $this->afterFind($entity);
+                
+                if(!empty($args['contain']))
+                {
+                    foreach($this->associations as $asso)
+                    {
+                        if(in_array(ucfirst($asso['table']), $args['contain']))
+                        {
+                            
+                            $className = 'App\\Entity\\' . ucfirst($asso['table']);
+                            $className = new $className;
+                            $result[$key] = $className->afterFind($result[$key]);
+                        }
+                    }
+                }
             }
-
         }
 
         return $result;
@@ -345,6 +419,41 @@ class Query
         return $result;
     }
 
+    public function count(array $args = []): int
+    {
+        $count = 0;
+
+        $default = [
+            'condition'     => FALSE,
+        ];
+
+        $args = array_merge($default, $this->beforeFind($args));
+        $args['select'] = 'COUNT(*)';
+
+        $sql = $this->select($args['select']);
+
+        if(!empty($args['conditions']))
+            $sql .= $this->conditions($args['conditions']);
+        
+        $query = $this->db->prepare($sql);
+        $query->execute();
+        
+        $result = $query->fetch();
+
+        if(!empty($result))
+        $score = (int) $result[0];
+
+        $this->addSQL($sql);
+
+        return $score;
+
+    }
+
+    public function beforeValidate(array $entity): array
+    {
+        return $entity;
+    }
+
     /**
      * @brief Fonction de rappel executée avant l'enregistrement d'une entité
      * @param array $entity Tableau contenant les champs de l'entité à sauvegarder.
@@ -372,8 +481,6 @@ class Query
 
     private function update(array $entity)
     {
-        $entity = $this->beforeSave($entity);
-
         $fields = [];
         foreach($this->fields as $field => $type)
         {
@@ -410,7 +517,8 @@ class Query
 
             if (empty($entity[$field]))
                 $values[] = 'NULL';
-            else if ($type === 'string' || $type === 'datetime' || $type === 'date')
+            //else if ($type === 'string' || $type === 'datetime' || $type === 'date')
+            else if(is_string($entity[$field]))
                 $values[] = sprintf('"%s"', $entity[$field]);
             else
                 $values[] = $entity[$field];
@@ -438,15 +546,17 @@ class Query
      */
     public function save(array $entity)
     {
-        $entity = $this->beforeSave($entity);
-        
+        $entity = $this->type($entity);
+        $entity = $this->beforeValidate($entity);
         $this->validation->validate($entity, $this->rules);
+        
         if (!$this->validation->errorCount) 
         {
+            $entity = $this->beforeSave($entity);
             if (empty($entity[$this->primaryKey]))
                 return $this->insert($entity);
 
-            if ($this->update($entity)) {
+            if ($this->update($entity)) { 
                 $this->afterSave($entity);
                 return TRUE;
             }
@@ -481,7 +591,7 @@ class Query
      * @see findById()
      * @see beforeFind()
      */
-    public function afterFind(array $entity)
+    public function afterFind(stdClass $entity): stdClass
     {
         return $entity;
     }
@@ -489,11 +599,11 @@ class Query
      /**
      * @brief Fonction de rappel appelée avant la suppression d'un enregistrement.
      * @param $entity Tableau contenant les champs sélectionnées de l'entité.
-     * @return array Tableau contenant au minimum la clé primaire de l'entité.
+     * @return stdClass Tableau contenant au minimum la clé primaire de l'entité.
      * @see afterDelete()
      * @see delete()
      */
-    public function beforeDelete(array $entity)
+    public function beforeDelete(stdClass $entity)
     {
         return $entity;
     }
@@ -501,11 +611,11 @@ class Query
     /**
      * @brief Fonction de rappel appelée après la suppression d'un enregistrement.
      * @param $entity Tableau contenant les champs sélectionnées de l'entité.
-     * @return array Tableau contenant au minimum la clé primaire de l'entité.
+     * @return stdClass Tableau contenant au minimum la clé primaire de l'entité.
      * @see afterDelete()
      * @see delete()
      */
-    public function afterDelete(array $entity)
+    public function afterDelete(stdClass $entity)
     {
         return $entity;
     }

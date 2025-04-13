@@ -4,6 +4,8 @@
  */
 namespace Eagle;
 
+
+
 class Controller
 {
     public $view;       /**< Instance de View */
@@ -11,13 +13,18 @@ class Controller
     public $message;    /**< Instance de Message */
     public $model;      /**< Instance de Query */
     public $name;       /**< Nom du Controller */
+    public $auth;
+    //public $auth;        /**< Instance de Auth */
 
     public function __construct()
     {
-        $this->initialize();
+        
         $this->request = new Request();
         $this->view = new View();
-        $this->message = new Message;
+        $this->message = new Message();
+        $this->auth = new Auth();
+        
+        $this->initialize();
     }
 
     /**
@@ -27,7 +34,6 @@ class Controller
      */
     public function initialize(): void
     {
-
     }
 
     /**
@@ -58,16 +64,29 @@ class Controller
     public function redirect(array $url): void
     {
         $args = [
+            'prefix' => $this->request->getParams('prefix'),
             'controller' => $this->request->getParams('controller'),
             'action' => $this->request->getParams('action'),
         ];
-
+        
         $url = array_merge($args, $url);
+        $url = Router::parse($url, FALSE);
 
-        if(empty($url['action']))
-            $url['action'] = 'index';
-
-        header(sprintf('Location: /?controller=%s&action=%s', $url['controller'], $url['action']));
+        if (is_array($url)) 
+        {
+            
+            $items = [];
+            foreach ($url as $key => $value) {
+                if (!empty($value))
+                $items[] = $key . '=' . $value;
+            }
+            
+            $url = '/' . implode('&', $items);
+            
+            $url = Router::reverse($url);
+        }
+       
+        header('Location: ' . $url);
         exit();
     }
 
@@ -81,5 +100,20 @@ class Controller
         $entity = strtolower($name);
         $class = 'App\\Entity\\'.$name;
         $this->$entity = new $class; 
+    }
+
+    public function authorize(): void
+    {
+        if($this->auth)
+        {
+            if(empty($this->auth->user()))
+            { 
+                if(!$this->auth->authorized())
+                {
+                    $this->message->error('You are not allowed to be here!', 'auth');
+                    $this->redirect($this->auth->redirect());
+                }
+            }    
+        }
     }
 }

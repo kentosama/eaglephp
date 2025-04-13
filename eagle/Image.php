@@ -1,65 +1,78 @@
 <?php
-/**
- * @author Jacques Belosoukinski <kentosama@free.fr>
- */
+
 namespace Eagle;
+
+use InvalidArgumentException;
+use Exception;
 
 class Image
 {
-
     /**
-     * @brief Récupérer le type mime d'une image.
-     * @param $src Chaîne contenant le nom du fichier.
+     * Récupérer le type mime d'une image.
+     * 
+     * @param string $src Chemin du fichier
      * @return string
+     * @throws InvalidArgumentException Si le fichier n'est pas une image
      */
-    static public function mimeType(string $src): string
+    public static function mimeType(string $src): string
     {
-        $mime = '';
-        
-        if(file_exists($src))
-        {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = finfo_file($finfo, $src);
-            finfo_close($finfo);
+        if (!file_exists($src)) {
+            throw new InvalidArgumentException("Le fichier '$src' n'existe pas.");
+        }
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $src);
+        finfo_close($finfo);
+
+        if (!in_array($mime, ['image/jpg', 'image/jpeg', 'image/png', 'image/webp'])) {
+            throw new InvalidArgumentException("Le fichier '$src' n'est pas une image valide.");
         }
 
         return $mime;
     }
 
     /**
-     * @brief Recadrer une image JPG ou PNG et l'enregistrer sur le serveur.
-     * @param $src Chemin vers le fichier source.
-     * @param $dst Chemin vers le fichier de destination.
-     * @param $size Tableau contenant la nouvelle dimention de l'image [$width, $height].
-     * @return void
+     * Recadrer une image et l'enregistrer sur le serveur.
+     *
+     * @param string $src Chemin vers le fichier source
+     * @param string $dst Chemin vers le fichier de destination
+     * @param array $size Dimensions du recadrage [width, height]
+     * @return bool
+     * @throws Exception Si l'image ne peut pas être traitée
      */
-    static public function crop(string $src, string $dst, array $size = [250, 250]): bool
+    public static function crop(string $src, string $dst, array $size = [250, 250]): bool
     {
-        
         list($width, $height) = getimagesize($src);
-
-        $mime = Image::mimeType($src);
-
-       
-        if(in_array($mime, ['image/jpg', 'image/jpeg']))
-        {
-            $img = imagecreatefromjpeg($src);
-            $extension = '.jpg';
-        }
-        else if($mime  === 'image/png')
-        {
-            $img = imagecreatefrompng($src);
-            $extension = '.png';
-        } 
+        $mime = self::mimeType($src);
         
-        if ($width > $height) 
-        {
-            $y = 0;
+        // Déterminer le type d'image
+        switch ($mime) {
+            case 'image/jpg':
+            case 'image/jpeg':
+                $img = imagecreatefromjpeg($src);
+                $extension = '.jpg';
+                break;
+
+            case 'image/png':
+                $img = imagecreatefrompng($src);
+                $extension = '.png';
+                break;
+
+            case 'image/webp':
+                $img = imagecreatefromwebp($src);
+                $extension = '.webp';
+                break;
+
+            default:
+                throw new Exception("Format de l'image non supporté: $mime");
+        }
+
+        // Calcul des coordonnées de recadrage
+        if ($width > $height) {
             $x = ($width - $height) / 2;
+            $y = 0;
             $smallestSide = $height;
-        } 
-        else 
-        {
+        } else {
             $x = 0;
             $y = ($height - $width) / 2;
             $smallestSide = $width;
@@ -68,10 +81,20 @@ class Image
         $crop = imagecreatetruecolor($size[0], $size[1]);
         imagecopyresampled($crop, $img, 0, 0, $x, $y, $size[0], $size[1], $smallestSide, $smallestSide);
         
-        if($extension === '.jpg')
-            imagejpeg($crop, $dst);
-        else if($extension === '.png')
-            imagepng($crop, $dst);
+        // Sauvegarde de l'image recadrée
+        switch ($extension) {
+            case '.jpg':
+                imagejpeg($crop, $dst);
+                break;
+
+            case '.png':
+                imagepng($crop, $dst);
+                break;
+
+            case '.webp':
+                imagewebp($crop, $dst);
+                break;
+        }
 
         imagedestroy($img);
         imagedestroy($crop);

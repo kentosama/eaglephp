@@ -9,11 +9,12 @@ namespace Eagle;
 class Auth
 {
     private $core;
+    private $allowed = [];
 
     private $_config = [
         'entity'    => 'Users',
         'fields'    => ['user_nickname', 'user_password'],
-        'redirect'  => ['controller' => 'users', 'action' => 'login'],
+        'redirect'  => ['controller' => 'users', 'action' => 'login', 'prefix' => FALSE],
         'message'   => 'You are not allowed to view this page'
     ];
     
@@ -33,9 +34,33 @@ class Auth
      * string <b>message</b> Chaîne à afficher lorsqu'un utilisateur non authentitifié tente d'accéder à une page non autorisée.
      * @return void
      */
-    function setConfig(array $config): void
+    public function setConfig(array $config): void
     {   
         $this->_config = array_merge($this->_config, $config);
+    }
+
+    public function allow(array $actions): void
+    {
+        $this->allowed = array_merge($this->allowed, $actions);
+    }
+
+    public function authorized(): bool
+    {
+        $request = new Request();
+        $params = $request->getParams();
+        
+        if(!empty($this->allowed))
+        {
+            if(in_array($params['action'], $this->allowed))
+            return TRUE;
+        }
+
+        return (
+            $params['controller']   === $this->_config['redirect']['controller'] && 
+            $params['action']       === $this->_config['redirect']['action'] && 
+            $params['prefix']      === $this->_config['redirect']['prefix']
+        );
+
     }
 
     /**
@@ -44,12 +69,12 @@ class Auth
      * @return bool TRUE si l'authentification a réussie.
      * @see setUser()
      */
-    function identify(array $data): bool
+    public function identify(array $data): bool
     {
         $className = 'App\\Entity\\'.$this->_config['entity'];
         $query = new $className;
 
-        $user = $query->findFirst(['conditions' => [$this->_config['fields'][0] => $data[$this->_config['fields'][0]]]]);
+        $user = $query->findFirst(['conditions' => [$this->_config['fields'][0] => $data[$this->_config['fields'][0]]], 'contain' => ['Roles']]);
 
         if(!$user)
         return FALSE;
@@ -76,7 +101,7 @@ class Auth
 
     /**
      * @brief Return l'URL de redirection défini dans la configuration de l'authentification.
-     * @return string Chaîne de caractère contenant l'URL de redirection.
+     * @return array Chaîne de caractère contenant l'URL de redirection.
      * @see setConfig()
      */
     function redirect(): ?array
@@ -100,7 +125,7 @@ class Auth
      * @param $key Une chaîne indiquant la clé afin de récupérer directement la valeur souhaitée.
      * @return string || array || NULL
      */
-    function user(string $key = NULL)
+    function user(string $key = ''): ?array
     {
         if(!isset($_SESSION['user']))
         return NULL;

@@ -9,6 +9,8 @@
 
 namespace Eagle;
 
+use Eagle\ErrorException;
+
 class Request
 {
 
@@ -17,11 +19,91 @@ class Request
      * @param $name Chaîne contenant le nom du paramètre à récupérer.
      * @return array || string 
      */
-    public function getParams($name = NULL)
+    public function getParams(?string $name = NULL)
     {
-        $keys = ['controller', 'action', 'id'];
 
-        $params = [];
+        $prefixes = ['/', 'admin'];
+        $params = [
+            'prefix' => FALSE
+        ];
+
+        $uri = Router::parse($_SERVER['REQUEST_URI']);
+        
+        //var_dump($_SERVER['REQUEST_URI']);
+        if (is_string($uri)) 
+        {
+            $uri = explode('/', $_SERVER['REQUEST_URI']);
+
+            if (!empty($uri[1])) 
+            {
+                if ($uri[1][0] !== '?') 
+                {
+                    $value = FALSE;
+                    foreach ($prefixes as $prefix) {
+                        if ($prefix === $uri[1]) {
+                            $value = $prefix;
+                            break;
+                        }
+                    }
+
+                    if (!$value) 
+                    {
+                        $params['controller'] = $uri[1];
+
+                        if (isset($uri[2]))
+                            $params['action'] = $uri[2];
+                        
+                        if(isset($uri[3]))
+                        {
+                            if($uri[3][0] === '?')
+                            {
+                                $query = str_replace('?', '', $uri[3]);
+                                $query = explode('&', $query);
+                                foreach($query as $str)
+                                {
+                                    $array = explode('=', $str);
+                                    $params['query'][$array[0]] = $array[1];
+                                }
+                                
+                            }
+                            else
+                            {
+                                $params['pass'][] = $uri[3];
+                            }
+                        }
+                            
+                    } 
+                    else 
+                    {
+                        $params['prefix'] = $value;
+
+                        if (isset($uri[2]))
+                            $params['controller'] = $uri[2];
+
+                        if (isset($uri[3]))
+                            $params['action'] = $uri[3];
+
+                        if(isset($uri[4]))
+                        {
+                            if($uri[4][0] === '?')
+                                $params['query'] = explode('&', $uri[4]);
+                        }
+                    }
+                }
+            }
+        } 
+        else if(is_array($uri))
+        {
+            $params = array_merge($params, $uri);
+        }
+
+        if(empty($params['controller']))
+        $params['controller'] = 'pages';
+
+        if(empty($params['action']))
+        $params['action'] = 'index';
+
+        $keys = ['controller', 'action', 'id', 'prefix'];
         
         foreach($keys as $key)
         {
@@ -37,6 +119,7 @@ class Request
             return NULL;
         }
 
+        //var_dump($params);die();
         return $params;
     }
 
